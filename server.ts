@@ -5,6 +5,21 @@ import { createServer as createViteServer } from "vite";
 import http from "http";
 import { Server as SocketIOServer } from "socket.io";
 import dotenv from "dotenv";
+import { 
+  initDatabase, 
+  fetchAllInitialData, 
+  dbSaveContent, 
+  dbDeleteContent, 
+  dbSaveIdea, 
+  dbDeleteIdea, 
+  dbSaveComment, 
+  dbToggleComment, 
+  dbDeleteComment, 
+  dbSaveAsset, 
+  dbDeleteAsset, 
+  dbSaveBrandContext, 
+  dbUpdateUser 
+} from "./src/db";
 
 dotenv.config();
 
@@ -371,6 +386,128 @@ Respond ONLY with a valid JSON object with schema:
       ]
     });
   });
+
+  // ----------------- REAL DATABASE REST ENDPOINTS -----------------
+  app.get("/api/initial-data", async (req, res) => {
+    try {
+      const data = await fetchAllInitialData();
+      res.json(data);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/content", async (req, res) => {
+    try {
+      const saved = await dbSaveContent(req.body);
+      io.emit("global-content-updated", { documentId: saved.id, updates: saved });
+      res.json(saved);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.delete("/api/content/:id", async (req, res) => {
+    try {
+      const success = await dbDeleteContent(req.params.id);
+      io.emit("global-synced", { type: "content-deleted", id: req.params.id });
+      res.json({ success });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/ideas", async (req, res) => {
+    try {
+      const saved = await dbSaveIdea(req.body);
+      io.emit("global-synced", { type: "idea-added", idea: saved });
+      res.json(saved);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.delete("/api/ideas/:id", async (req, res) => {
+    try {
+      const success = await dbDeleteIdea(req.params.id);
+      io.emit("global-synced", { type: "idea-deleted", id: req.params.id });
+      res.json({ success });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/comments", async (req, res) => {
+    try {
+      const saved = await dbSaveComment(req.body);
+      io.to(`doc_${saved.contentId}`).emit("comment-synced", saved);
+      res.json(saved);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.put("/api/comments/:id/resolve", async (req, res) => {
+    try {
+      const success = await dbToggleComment(req.params.id);
+      io.emit("comment-toggled", req.params.id);
+      res.json({ success });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.delete("/api/comments/:id", async (req, res) => {
+    try {
+      const success = await dbDeleteComment(req.params.id);
+      io.emit("comment-deleted", req.params.id);
+      res.json({ success });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/assets", async (req, res) => {
+    try {
+      const saved = await dbSaveAsset(req.body);
+      if (saved.contentId) {
+        io.to(`doc_${saved.contentId}`).emit("asset-synced", saved);
+      }
+      res.json(saved);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.delete("/api/assets/:id", async (req, res) => {
+    try {
+      const success = await dbDeleteAsset(req.params.id);
+      io.emit("asset-deleted", req.params.id);
+      res.json({ success });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/brand-context", async (req, res) => {
+    try {
+      const saved = await dbSaveBrandContext(req.body);
+      res.json(saved);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.put("/api/user", async (req, res) => {
+    try {
+      const updated = await dbUpdateUser(req.body);
+      res.json(updated);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  await initDatabase();
 
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({

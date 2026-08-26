@@ -23,10 +23,16 @@ const navItems = [
   { name: 'Analytics', path: '/analytics', icon: BarChart3 },
 ];
 
+import { useEffect } from 'react';
+
 export default function Layout() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { currentUser } = useStore();
+  const { currentUser, loadInitialData } = useStore();
+  
+  useEffect(() => {
+    loadInitialData();
+  }, [loadInitialData]);
   
   return (
     <div className="flex h-screen bg-slate-50 dark:bg-slate-950 font-sans text-slate-900 dark:text-slate-100 overflow-hidden">

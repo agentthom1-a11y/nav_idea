@@ -62,6 +62,9 @@ export interface ContentItem {
   caption?: string;
   thumbnail?: string;
   views?: number;
+  likes?: number;
+  shares?: number;
+  commentsCount?: number;
   engagement?: number;
 }
 
@@ -78,6 +81,7 @@ export interface Idea {
 
 export interface Asset {
   id: string;
+  contentId?: string;
   name: string;
   type: 'image' | 'video' | 'document';
   url: string;

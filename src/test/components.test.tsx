@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import Dashboard from '../pages/Dashboard';
@@ -11,8 +11,28 @@ import DailyScheduler from '../components/DailyScheduler';
 import WeeklyPlannerModal from '../components/WeeklyPlannerModal';
 import { GlobalSearch } from '../components/GlobalSearch';
 import { ReadabilityRing } from '../components/ReadabilityRing';
+import { useStore } from '../store';
 
 describe('UI Pages and Components', () => {
+  beforeEach(() => {
+    useStore.setState({
+      content: [
+        {
+          id: 'cnt1',
+          title: '5 mistakes killing your landing page',
+          platform: 'LinkedIn',
+          contentType: 'Post',
+          status: 'SCHEDULED',
+          priority: 'HIGH',
+          ownerId: 'u1',
+          publishAt: new Date().toISOString(),
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        }
+      ]
+    });
+  });
+
   it('renders Dashboard with metrics and pipeline', () => {
     render(
       <MemoryRouter>
@@ -122,10 +142,11 @@ describe('UI Pages and Components', () => {
     );
 
     expect(screen.getByText('Brand Context')).toBeInTheDocument();
-    const brandInput = screen.getByPlaceholderText('e.g. Acme Corp');
+    expect(screen.getByText('Account Profile')).toBeInTheDocument();
+    const brandInput = screen.getByPlaceholderText('e.g. NAVRINE');
     fireEvent.change(brandInput, { target: { value: 'Global Alpha Brand' } });
 
-    const saveBtn = screen.getByText(/Save Settings/i);
+    const saveBtn = screen.getByText(/Save Brand Context/i);
     fireEvent.click(saveBtn);
 
     expect(screen.getByText('Saved!')).toBeInTheDocument();
