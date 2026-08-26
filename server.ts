@@ -1,5 +1,6 @@
 import express from "express";
 import path from "path";
+import fs from "fs";
 import { createServer as createViteServer } from "vite";
 import http from "http";
 import { Server as SocketIOServer } from "socket.io";
@@ -97,6 +98,47 @@ async function startServer() {
       io.to(currentRoom).emit("presence-update", Array.from(roomUsers.values()));
     });
 
+    socket.on("edit-content", ({ documentId, updates }) => {
+      if (documentId) {
+        socket.to(`doc_${documentId}`).emit("content-synced", { documentId, updates });
+        socket.broadcast.emit("global-content-updated", { documentId, updates });
+      }
+    });
+
+    socket.on("add-comment", ({ documentId, comment }) => {
+      if (documentId) {
+        socket.to(`doc_${documentId}`).emit("comment-synced", comment);
+      }
+    });
+
+    socket.on("toggle-comment", ({ documentId, commentId }) => {
+      if (documentId) {
+        socket.to(`doc_${documentId}`).emit("comment-toggled", commentId);
+      }
+    });
+
+    socket.on("delete-comment", ({ documentId, commentId }) => {
+      if (documentId) {
+        socket.to(`doc_${documentId}`).emit("comment-deleted", commentId);
+      }
+    });
+
+    socket.on("add-asset", ({ documentId, asset }) => {
+      if (documentId) {
+        socket.to(`doc_${documentId}`).emit("asset-synced", asset);
+      }
+    });
+
+    socket.on("delete-asset", ({ documentId, assetId }) => {
+      if (documentId) {
+        socket.to(`doc_${documentId}`).emit("asset-deleted", assetId);
+      }
+    });
+
+    socket.on("global-update", (payload) => {
+      socket.broadcast.emit("global-synced", payload);
+    });
+
     socket.on("disconnect", () => {
       if (currentRoom && activeUsers.has(currentRoom)) {
         const roomUsers = activeUsers.get(currentRoom);
@@ -110,6 +152,7 @@ async function startServer() {
   });
 
   app.use(express.json());
+  app.use(express.urlencoded({ extended: true }));
 
   const buildContextString = (brandContext: any) => {
     if (!brandContext) return '';
@@ -127,7 +170,7 @@ async function startServer() {
   };
 
   app.post("/api/generate-content", async (req, res) => {
-    const { platform = "Instagram", pillar, topic, brandContext } = req.body;
+    const { platform = "Instagram", pillar, topic, brandContext } = req.body || {};
     const topicName = topic || pillar || 'growth strategy';
 
     try {
@@ -153,7 +196,7 @@ Requirements:
   });
 
   app.post("/api/generate-weekly-plan", async (req, res) => {
-    const { platforms = ['Instagram', 'LinkedIn', 'X'], topics = ['Growth', 'Strategy'], startDate = new Date().toISOString(), brandContext } = req.body;
+    const { platforms = ['Instagram', 'LinkedIn', 'X'], topics = ['Growth', 'Strategy'], startDate = new Date().toISOString(), brandContext } = req.body || {};
     
     try {
       const prompt = `You are a social media director. Create a 7-day content schedule starting from ${startDate} for: ${platforms.join(', ')}.
@@ -200,7 +243,7 @@ Schema:
   });
 
   app.post("/api/generate-daily-suggestions", async (req, res) => {
-    const { platforms = ['Instagram', 'LinkedIn', 'X'], topics = ['Industry Insights', 'Growth Tips'], date = new Date().toISOString(), brandContext } = req.body;
+    const { platforms = ['Instagram', 'LinkedIn', 'X'], topics = ['Industry Insights', 'Growth Tips'], date = new Date().toISOString(), brandContext } = req.body || {};
     
     try {
       const prompt = `You are an expert social media manager. Generate tailored content post suggestions for date: ${date} across platforms: ${platforms.join(", ")}.
@@ -242,7 +285,7 @@ Respond ONLY with a valid JSON array of objects with schema:
   });
 
   app.post("/api/generate-all-details", async (req, res) => {
-    const { topic = "Content Strategy", platform = "Instagram", contentType = "Reel", brandContext } = req.body;
+    const { topic = "Content Strategy", platform = "Instagram", contentType = "Reel", brandContext } = req.body || {};
     
     try {
       const prompt = `You are an expert social media director. Generate a complete, ready-to-produce content piece for topic: "${topic}".
@@ -278,7 +321,7 @@ Respond ONLY with a valid JSON object matching this exact schema:
   });
 
   app.post("/api/seo-audit", async (req, res) => {
-    const { text = "", keywords = "", platform = "Instagram", brandContext } = req.body;
+    const { text = "", keywords = "", platform = "Instagram", brandContext } = req.body || {};
 
     if (text.trim().length > 0) {
       try {
@@ -336,16 +379,27 @@ Respond ONLY with a valid JSON object with schema:
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), 'dist');
+    let distPath = path.join(process.cwd(), 'dist');
+    if (!fs.existsSync(path.join(distPath, 'index.html'))) {
+      if (fs.existsSync(path.join(__dirname, 'index.html'))) {
+        distPath = __dirname;
+      }
+    }
     app.use(express.static(distPath));
-    app.get('*all', (req, res) => {
+    app.use((req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }
 
-  httpServer.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-  });
+  if (isNaN(Number(PORT))) {
+    httpServer.listen(PORT, () => {
+      console.log(`Server running on socket ${PORT}`);
+    });
+  } else {
+    httpServer.listen(Number(PORT), "0.0.0.0", () => {
+      console.log(`Server running on http://localhost:${PORT}`);
+    });
+  }
 }
 
 startServer();

@@ -4,16 +4,16 @@ import { addDays, subDays } from 'date-fns';
 export const currentUser: User = {
   id: 'u1',
   name: 'Alex Rivera',
-  email: 'alex@northstar.com',
+  email: 'alex@navrine.com',
   avatar: 'https://i.pravatar.cc/150?u=a042581f4e29026704d',
   role: 'Content Manager'
 };
 
 export const users: User[] = [
   currentUser,
-  { id: 'u2', name: 'Sarah Chen', email: 'sarah@northstar.com', avatar: 'https://i.pravatar.cc/150?u=a042581f4e29026704a', role: 'Strategist' },
-  { id: 'u3', name: 'Marcus Johnson', email: 'marcus@northstar.com', avatar: 'https://i.pravatar.cc/150?u=a042581f4e29026704b', role: 'Video Editor' },
-  { id: 'u4', name: 'Thomas Wright', email: 'thomas@northstar.com', avatar: 'https://i.pravatar.cc/150?u=a042581f4e29026704c', role: 'Writer' },
+  { id: 'u2', name: 'Sarah Chen', email: 'sarah@navrine.com', avatar: 'https://i.pravatar.cc/150?u=a042581f4e29026704a', role: 'Strategist' },
+  { id: 'u3', name: 'Marcus Johnson', email: 'marcus@navrine.com', avatar: 'https://i.pravatar.cc/150?u=a042581f4e29026704b', role: 'Video Editor' },
+  { id: 'u4', name: 'Thomas Wright', email: 'thomas@navrine.com', avatar: 'https://i.pravatar.cc/150?u=a042581f4e29026704c', role: 'Writer' },
 ];
 
 export const pillars: ContentPillar[] = [

@@ -6,3 +6,6 @@ coverage/
 *.log
 .env*
 !.env.example
+*.tar.gz
+*.zip
+

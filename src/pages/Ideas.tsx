@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useStore } from '../store';
 import { Card, CardContent } from '../components/ui/card';
 import { PLATFORM_COLORS, formatTimeAgo, cn, generateId } from '../lib/utils';
 import { Plus, Search, Filter, MoreHorizontal, Lightbulb, Sparkles, Loader2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { Platform, ContentType } from '../types';
+import { Platform, ContentType, Idea } from '../types';
+import { io } from 'socket.io-client';
 
 export default function Ideas() {
   const { ideas, addIdea, addContent, deleteIdea, currentUser, brandContext } = useStore();
@@ -12,11 +13,34 @@ export default function Ideas() {
   const [search, setSearch] = useState('');
   const [isAdding, setIsAdding] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+  const socketRef = useRef<any>(null);
   
   // New Idea Form State
   const [newTitle, setNewTitle] = useState('');
   const [newDesc, setNewDesc] = useState('');
   const [newPlatform, setNewPlatform] = useState<any>('Instagram');
+
+  useEffect(() => {
+    try {
+      const socket = io({ transports: ['websocket', 'polling'], autoConnect: true });
+      socketRef.current = socket;
+
+      socket.on('global-synced', (payload: any) => {
+        if (!payload) return;
+        if (payload.type === 'idea-added' && payload.idea) {
+          addIdea(payload.idea);
+        } else if (payload.type === 'idea-deleted' && payload.id) {
+          deleteIdea(payload.id);
+        }
+      });
+
+      return () => {
+        socket.disconnect();
+      };
+    } catch (e) {
+      // Safe fallback if offline
+    }
+  }, [addIdea, deleteIdea]);
 
   const filteredIdeas = ideas.filter(i => 
     i.title.toLowerCase().includes(search.toLowerCase()) || 
@@ -25,7 +49,7 @@ export default function Ideas() {
 
   const handleSaveIdea = () => {
     if (!newTitle.trim()) return;
-    addIdea({
+    const newIdea: Idea = {
       id: generateId(),
       title: newTitle,
       description: newDesc,
@@ -33,10 +57,21 @@ export default function Ideas() {
       score: Math.floor(Math.random() * 40) + 50, // mock score
       createdAt: new Date().toISOString(),
       createdBy: currentUser.id
-    });
+    };
+    addIdea(newIdea);
+    if (socketRef.current) {
+      socketRef.current.emit('global-update', { type: 'idea-added', idea: newIdea });
+    }
     setIsAdding(false);
     setNewTitle('');
     setNewDesc('');
+  };
+
+  const handleDeleteIdea = (ideaId: string) => {
+    deleteIdea(ideaId);
+    if (socketRef.current) {
+      socketRef.current.emit('global-update', { type: 'idea-deleted', id: ideaId });
+    }
   };
 
   const handleGenerateIdeas = async () => {
@@ -182,7 +217,7 @@ export default function Ideas() {
                   </div>
                 </div>
                 <button 
-                  onClick={() => deleteIdea(idea.id)}
+                  onClick={() => handleDeleteIdea(idea.id)}
                   title="Delete idea"
                   className="text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800"
                 >

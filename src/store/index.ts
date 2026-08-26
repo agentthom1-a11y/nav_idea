@@ -34,12 +34,12 @@ interface AppState {
 
 const initialBrandContext: BrandContext = (() => {
   try {
-    const saved = localStorage.getItem('northstar_brand_context');
+    const saved = localStorage.getItem('navrine_brand_context');
     if (saved) return JSON.parse(saved);
   } catch (e) {
     // Ignore localStorage errors
   }
-  return { brandName: '', targetAudience: '', brandVoice: '', competitors: '', additionalContext: '' };
+  return { brandName: 'NAVRINE', targetAudience: 'Content Creators, Marketers & Growth Teams', brandVoice: 'Visionary, Sharp & High-Impact', competitors: '', additionalContext: '' };
 })();
 
 export const useStore = create<AppState>((set) => ({
@@ -47,7 +47,7 @@ export const useStore = create<AppState>((set) => ({
   updateBrandContext: (updates) => set((state) => {
     const updated = { ...state.brandContext, ...updates };
     try {
-      localStorage.setItem('northstar_brand_context', JSON.stringify(updated));
+      localStorage.setItem('navrine_brand_context', JSON.stringify(updated));
     } catch (e) {
       // Ignore localStorage errors
     }

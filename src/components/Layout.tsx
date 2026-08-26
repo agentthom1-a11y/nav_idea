@@ -32,11 +32,13 @@ export default function Layout() {
     <div className="flex h-screen bg-slate-50 dark:bg-slate-950 font-sans text-slate-900 dark:text-slate-100 overflow-hidden">
       <aside className="w-64 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col flex-shrink-0">
         <div className="h-14 flex items-center px-6 border-b border-slate-200 dark:border-slate-800">
-          <div className="flex items-center gap-2 font-semibold text-lg tracking-tight">
-            <div className="w-6 h-6 rounded bg-slate-900 dark:bg-white text-white dark:text-slate-900 flex items-center justify-center text-xs font-bold">
+          <div className="flex items-center gap-2.5 font-bold text-lg tracking-tight">
+            <div className="w-7 h-7 rounded-lg bg-gradient-to-tr from-blue-600 to-indigo-500 text-white flex items-center justify-center text-xs font-black shadow-sm shadow-blue-500/20">
               N
             </div>
-            Northstar
+            <span className="bg-clip-text text-transparent bg-gradient-to-r from-slate-900 via-slate-800 to-slate-700 dark:from-white dark:via-slate-200 dark:to-slate-400">
+              NAVRINE IDEA
+            </span>
           </div>
         </div>
 

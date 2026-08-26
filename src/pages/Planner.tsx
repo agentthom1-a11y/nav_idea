@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { DragDropContext, Droppable, Draggable as DraggableDnd, DropResult } from '@hello-pangea/dnd';
 import { 
   Calendar, 
@@ -13,6 +13,7 @@ import { cn, STATUS_COLORS } from '../lib/utils';
 import { useNavigate } from 'react-router-dom';
 import DailyScheduler from '../components/DailyScheduler';
 import WeeklyPlannerModal from '../components/WeeklyPlannerModal';
+import { io } from 'socket.io-client';
 
 const Draggable = DraggableDnd as any;
 
@@ -48,11 +49,40 @@ const formatFriendlyDate = (dateStr: string) => {
 };
 
 export default function Planner() {
-  const { content, updateContent, moveContent } = useStore();
+  const { content, updateContent, moveContent, addContent } = useStore();
   const navigate = useNavigate();
   const [view, setView] = useState<'board' | 'calendar' | 'list'>('board');
   const [showScheduler, setShowScheduler] = useState(false);
   const [showWeeklyModal, setShowWeeklyModal] = useState(false);
+  const socketRef = useRef<any>(null);
+
+  useEffect(() => {
+    try {
+      const socket = io({ transports: ['websocket', 'polling'], autoConnect: true });
+      socketRef.current = socket;
+
+      socket.on('global-synced', (payload: any) => {
+        if (!payload) return;
+        if (payload.type === 'content-moved' && payload.id) {
+          moveContent(payload.id, payload.newStatus, payload.index);
+        } else if (payload.type === 'content-added' && payload.item) {
+          addContent(payload.item);
+        }
+      });
+
+      socket.on('global-content-updated', ({ documentId, updates }: any) => {
+        if (documentId && updates) {
+          updateContent(documentId, updates);
+        }
+      });
+
+      return () => {
+        socket.disconnect();
+      };
+    } catch (e) {
+      // Safe fallback if offline
+    }
+  }, [moveContent, addContent, updateContent]);
 
   const onDragEnd = (result: DropResult) => {
     const { destination, source, draggableId } = result;
@@ -63,6 +93,15 @@ export default function Planner() {
       moveContent(draggableId, newStatus, destination.index);
     } else {
       updateContent(draggableId, { status: newStatus });
+    }
+
+    if (socketRef.current) {
+      socketRef.current.emit('global-update', {
+        type: 'content-moved',
+        id: draggableId,
+        newStatus,
+        index: destination.index
+      });
     }
   };
 

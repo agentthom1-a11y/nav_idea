@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useStore } from '../store';
 import { ContentItem, Status, Priority, Platform, ContentType, Comment, Asset } from '../types';
@@ -90,6 +90,7 @@ export default function ContentEditor() {
   });
 
   const [activeCollaborators, setActiveCollaborators] = useState<User[]>([]);
+  const socketRef = useRef<any>(null);
 
   // Filter comments for this content item
   const itemComments = useMemo(() => {
@@ -136,6 +137,7 @@ export default function ContentEditor() {
 
     try {
       const socket = io({ transports: ['websocket', 'polling'], autoConnect: true });
+      socketRef.current = socket;
 
       socket.on('connect', () => {
         socket.emit('join-document', { documentId: id, user: currentUser });
@@ -146,13 +148,44 @@ export default function ContentEditor() {
         setActiveCollaborators(uniqueUsers.filter(u => u.id !== currentUser.id));
       });
 
+      socket.on('content-synced', ({ updates }: { updates: Partial<ContentItem> }) => {
+        if (updates) {
+          setItem(prev => ({ ...prev, ...updates }));
+          updateContent(id, updates);
+        }
+      });
+
+      socket.on('comment-synced', (newComment: Comment) => {
+        if (newComment) {
+          addComment(newComment);
+        }
+      });
+
+      socket.on('comment-toggled', (commentId: string) => {
+        toggleResolveComment(commentId);
+      });
+
+      socket.on('comment-deleted', (commentId: string) => {
+        deleteComment(commentId);
+      });
+
+      socket.on('asset-synced', (newAsset: Asset) => {
+        if (newAsset) {
+          addAsset(newAsset);
+        }
+      });
+
+      socket.on('asset-deleted', (assetId: string) => {
+        deleteAsset(assetId);
+      });
+
       return () => {
         socket.disconnect();
       };
     } catch (e) {
       // Safe fallback when socket.io server is unreachable
     }
-  }, [id, currentUser]);
+  }, [id, currentUser, updateContent, addComment, toggleResolveComment, deleteComment, addAsset, deleteAsset]);
 
   const handleSeoAudit = async () => {
     const textToAnalyze = ((item.script || '') + ' ' + (item.caption || '')).trim();
@@ -181,9 +214,16 @@ export default function ContentEditor() {
         updatedAt: new Date().toISOString()
       } as ContentItem;
       addContent(newItem);
+      if (socketRef.current) {
+        socketRef.current.emit('global-update', { type: 'content-added', item: newItem });
+      }
       navigate(`/content/${newItem.id}`, { replace: true });
     } else {
-      updateContent(item.id as string, { ...item, updatedAt: new Date().toISOString() });
+      const updates = { ...item, updatedAt: new Date().toISOString() };
+      updateContent(item.id as string, updates);
+      if (socketRef.current) {
+        socketRef.current.emit('edit-content', { documentId: item.id, updates });
+      }
       setSaveToast(true);
       setTimeout(() => setSaveToast(false), 2500);
     }
@@ -193,6 +233,9 @@ export default function ContentEditor() {
     setItem(prev => ({ ...prev, status }));
     if (item.id && !isNew) {
       updateContent(item.id, { status });
+      if (socketRef.current) {
+        socketRef.current.emit('edit-content', { documentId: item.id, updates: { status } });
+      }
     }
   };
 
@@ -207,7 +250,24 @@ export default function ContentEditor() {
       resolved: false
     };
     addComment(newComment);
+    if (socketRef.current) {
+      socketRef.current.emit('add-comment', { documentId: id, comment: newComment });
+    }
     setCommentText('');
+  };
+
+  const handleToggleComment = (commentId: string) => {
+    toggleResolveComment(commentId);
+    if (socketRef.current) {
+      socketRef.current.emit('toggle-comment', { documentId: id, commentId });
+    }
+  };
+
+  const handleDeleteComment = (commentId: string) => {
+    deleteComment(commentId);
+    if (socketRef.current) {
+      socketRef.current.emit('delete-comment', { documentId: id, commentId });
+    }
   };
 
   const handleAddAsset = () => {
@@ -221,9 +281,19 @@ export default function ContentEditor() {
       uploadedAt: new Date().toISOString()
     };
     addAsset(newAsset);
+    if (socketRef.current) {
+      socketRef.current.emit('add-asset', { documentId: id, asset: newAsset });
+    }
     setNewAssetName('');
     setNewAssetUrl('');
     setShowAssetModal(false);
+  };
+
+  const handleDeleteAsset = (assetId: string) => {
+    deleteAsset(assetId);
+    if (socketRef.current) {
+      socketRef.current.emit('delete-asset', { documentId: id, assetId });
+    }
   };
 
   const generateAllWithAI = async () => {
@@ -682,7 +752,7 @@ export default function ContentEditor() {
                             <ExternalLink className="w-4 h-4" />
                           </a>
                           <button 
-                            onClick={() => deleteAsset(asset.id)}
+                            onClick={() => handleDeleteAsset(asset.id)}
                             className="p-1.5 text-slate-400 hover:text-red-500 rounded hover:bg-slate-100 dark:hover:bg-slate-800"
                           >
                             <Trash2 className="w-4 h-4" />
@@ -805,13 +875,13 @@ export default function ContentEditor() {
                             </div>
                             <div className="flex items-center gap-2">
                               <button 
-                                onClick={() => toggleResolveComment(c.id)}
+                                onClick={() => handleToggleComment(c.id)}
                                 className={cn("text-xs px-2 py-0.5 rounded", c.resolved ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-600 hover:bg-slate-200")}
                               >
                                 {c.resolved ? 'Resolved' : 'Mark Resolved'}
                               </button>
                               <button 
-                                onClick={() => deleteComment(c.id)}
+                                onClick={() => handleDeleteComment(c.id)}
                                 className="text-slate-400 hover:text-red-500"
                               >
                                 <Trash2 className="w-3.5 h-3.5" />
