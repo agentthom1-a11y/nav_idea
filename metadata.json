@@ -1,0 +1,6 @@
+{
+  "name": "Northstar Content OS",
+  "description": "A production-grade content operations system for planning, creating, reviewing, and analyzing the complete content lifecycle.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
