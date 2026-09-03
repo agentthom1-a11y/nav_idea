@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import Joyride, { CallBackProps, STATUS, Step } from 'react-joyride';
+import { Joyride, CallBackProps, STATUS, Step } from 'react-joyride';
 
 export const FeatureTour: React.FC = () => {
   const [run, setRun] = useState(false);

@@ -7,21 +7,20 @@ import { BarChart3, Clock, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 export default function Dashboard() {
-  const { content, currentUser } = useStore();
+  const { content, ideas, currentUser } = useStore();
   const navigate = useNavigate();
 
   const metrics = useMemo(() => {
     const published = content.filter(c => c.status === 'PUBLISHED').length;
     const scheduled = content.filter(c => c.status === 'SCHEDULED').length;
-    const inProduction = content.filter(c => ['DRAFT', 'DESIGN', 'EDITING'].includes(c.status)).length;
-    const needApproval = content.filter(c => c.status === 'REVIEW').length;
+    const inProduction = content.filter(c => ['DRAFT', 'DESIGN', 'EDITING', 'BRIEF', 'RESEARCH'].includes(c.status)).length;
+    const needApproval = content.filter(c => c.status === 'REVIEW' || c.status === 'CHANGES_REQUESTED').length;
     const overdue = content.filter(c => c.status !== 'PUBLISHED' && c.publishAt && isBefore(new Date(c.publishAt), new Date())).length;
     
-    // Mock analytics
-    const totalViews = content.reduce((acc, curr) => acc + (curr.views || 0), 0) || 2400000;
-    const engagement = "7.8%";
+    const totalViews = content.reduce((acc, curr) => acc + (curr.views || 0), 0);
+    const totalEngagements = content.reduce((acc, curr) => acc + (curr.likes || 0) + (curr.commentsCount || 0) + (curr.shares || 0) + (curr.engagement || 0), 0);
 
-    return { published, scheduled, inProduction, needApproval, overdue, totalViews, engagement };
+    return { published, scheduled, inProduction, needApproval, overdue, totalViews, totalEngagements };
   }, [content]);
 
   const todayContent = useMemo(() => {
@@ -31,12 +30,13 @@ export default function Dashboard() {
   const attentionRequired = useMemo(() => {
     return content.filter(c => 
       c.status === 'REVIEW' || 
+      c.status === 'CHANGES_REQUESTED' ||
       (c.status !== 'PUBLISHED' && c.publishAt && isBefore(new Date(c.publishAt), new Date()))
     ).slice(0, 5);
   }, [content]);
 
   const pipelineStages = [
-    { name: 'Ideas', count: 32, icon: null },
+    { name: 'Ideas', count: ideas.length, icon: null },
     { name: 'Drafting', count: metrics.inProduction, icon: null },
     { name: 'Review', count: metrics.needApproval, icon: null },
     { name: 'Scheduled', count: metrics.scheduled, icon: null },
@@ -87,7 +87,7 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold">{formatNumber(metrics.totalViews)}</div>
-            <p className="text-xs text-emerald-600 mt-1 font-medium">+18% vs previous period</p>
+            <p className="text-xs text-slate-500 mt-1 font-medium">{metrics.published} published • {metrics.scheduled} scheduled</p>
           </CardContent>
         </Card>
       </div>

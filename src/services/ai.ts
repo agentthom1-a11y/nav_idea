@@ -6,6 +6,7 @@ export interface SeoAnalysis {
   readabilityFeedback: string;
   suggestions: string[];
 }
+
 export interface DailySuggestion {
   title: string;
   platform: string;
@@ -25,7 +26,7 @@ export const aiService = {
     });
 
     if (!response.ok) {
-      const errorData = await response.json();
+      const errorData = await response.json().catch(() => ({}));
       throw new Error(errorData.error || 'Failed to generate daily suggestions');
     }
 
@@ -33,17 +34,24 @@ export const aiService = {
     return data.suggestions || [];
   },
 
-  async generateContent(platform: string, pillar: string, topic?: string): Promise<string> {
+  async generateContent(
+    platform: string, 
+    pillar: string, 
+    topic?: string, 
+    type: 'script' | 'caption' | 'outline' | 'brief' = 'caption',
+    contentType: string = 'Post',
+    brandContext?: any
+  ): Promise<string> {
     const response = await fetch('/api/generate-content', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ platform, pillar, topic }),
+      body: JSON.stringify({ platform, pillar, topic, type, contentType, brandContext }),
     });
 
     if (!response.ok) {
-      const errorData = await response.json();
+      const errorData = await response.json().catch(() => ({}));
       throw new Error(errorData.error || 'Failed to generate content');
     }
 
@@ -61,7 +69,7 @@ export const aiService = {
     });
 
     if (!response.ok) {
-      const errorData = await response.json();
+      const errorData = await response.json().catch(() => ({}));
       throw new Error(errorData.error || 'Failed to generate weekly plan');
     }
 
@@ -79,7 +87,7 @@ export const aiService = {
     });
 
     if (!response.ok) {
-      const errorData = await response.json();
+      const errorData = await response.json().catch(() => ({}));
       throw new Error(errorData.error || 'Failed to generate all details');
     }
 
@@ -97,11 +105,10 @@ export const aiService = {
     });
 
     if (!response.ok) {
-      const errorData = await response.json();
+      const errorData = await response.json().catch(() => ({}));
       throw new Error(errorData.error || 'Failed to analyze SEO');
     }
 
     return await response.json();
   }
 };
-

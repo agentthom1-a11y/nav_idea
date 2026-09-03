@@ -183,9 +183,20 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   updateIdea: (id, updates) => {
-    set((state) => ({
-      ideas: state.ideas.map(i => i.id === id ? { ...i, ...updates } : i)
-    }));
+    set((state) => {
+      const item = state.ideas.find(i => i.id === id);
+      const updatedIdea = item ? { ...item, ...updates } : null;
+      if (updatedIdea) {
+        fetch('/api/ideas', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(updatedIdea)
+        }).catch(() => {});
+      }
+      return {
+        ideas: state.ideas.map(i => i.id === id ? { ...i, ...updates } : i)
+      };
+    });
   },
 
   deleteIdea: (id) => {

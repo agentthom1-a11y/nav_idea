@@ -334,13 +334,19 @@ export default function ContentEditor() {
     
     setIsGenerating(true);
     try {
+      const topic = `${item.title || ''} ${item.description || ''}`.trim();
       const contentText = await aiService.generateContent(
         item.platform || 'Instagram',
         item.description || item.title || '',
-        item.title
+        topic,
+        field,
+        item.contentType || 'Post',
+        brandContext
       );
       if (contentText) {
         setItem(prev => ({ ...prev, [field]: contentText }));
+        setSaveToast(true);
+        setTimeout(() => setSaveToast(false), 2500);
       }
     } catch (error: any) {
       console.error("Failed to generate content", error);

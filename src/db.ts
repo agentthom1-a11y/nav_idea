@@ -11,18 +11,25 @@ let isConnected = false;
 const inMemoryStore = {
   user: {
     id: 'u1',
-    name: 'Navrine User',
+    name: 'Navrine Admin',
     email: 'admin@navrine.com',
     avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
-    role: 'Content Strategist'
+    role: 'Workspace Owner'
   } as User,
   users: [
     {
       id: 'u1',
-      name: 'Navrine User',
+      name: 'Navrine Admin',
       email: 'admin@navrine.com',
       avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
-      role: 'Content Strategist'
+      role: 'Workspace Owner'
+    },
+    { 
+      id: 'u2', 
+      name: 'Editorial Lead', 
+      email: 'editor@navrine.com', 
+      avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&auto=format&fit=crop&q=80', 
+      role: 'Editor' 
     }
   ] as User[],
   brandContext: {
@@ -38,7 +45,9 @@ const inMemoryStore = {
     { id: 'p3', name: 'Product Growth', color: '#10b981' },
     { id: 'p4', name: 'Community', color: '#ec4899' }
   ] as ContentPillar[],
-  campaigns: [] as Campaign[],
+  campaigns: [
+    { id: 'c1', name: 'Q3 Growth Sprint', startDate: new Date().toISOString(), endDate: new Date(Date.now() + 30 * 86400000).toISOString(), status: 'Active', goal: '1M impressions', color: '#6366f1' }
+  ] as Campaign[],
   contents: [] as ContentItem[],
   ideas: [] as Idea[],
   comments: [] as Comment[],
@@ -143,10 +152,12 @@ export async function initDatabase() {
         publish_at VARCHAR(64),
         caption LONGTEXT,
         script LONGTEXT,
+        thumbnail TEXT,
         views INT DEFAULT 0,
         likes INT DEFAULT 0,
         shares INT DEFAULT 0,
         comments_count INT DEFAULT 0,
+        engagement INT DEFAULT 0,
         created_at VARCHAR(64),
         updated_at VARCHAR(64)
       );
@@ -158,6 +169,7 @@ export async function initDatabase() {
         title TEXT NOT NULL,
         description LONGTEXT,
         platform VARCHAR(64),
+        pillar_id VARCHAR(64),
         score INT DEFAULT 75,
         created_by VARCHAR(64),
         created_at VARCHAR(64)
@@ -190,10 +202,12 @@ export async function initDatabase() {
     // Insert default user if not exists
     const [userRows]: any = await p.query('SELECT COUNT(*) as cnt FROM users');
     if (userRows[0]?.cnt === 0) {
-      await p.query(
-        'INSERT INTO users (id, name, email, avatar, role) VALUES (?, ?, ?, ?, ?)',
-        [inMemoryStore.user.id, inMemoryStore.user.name, inMemoryStore.user.email, inMemoryStore.user.avatar, inMemoryStore.user.role]
-      );
+      for (const u of inMemoryStore.users) {
+        await p.query(
+          'INSERT IGNORE INTO users (id, name, email, avatar, role) VALUES (?, ?, ?, ?, ?)',
+          [u.id, u.name, u.email, u.avatar, u.role]
+        );
+      }
     }
 
     // Insert default brand context if not exists
@@ -203,6 +217,28 @@ export async function initDatabase() {
         'INSERT INTO brand_context (id, brand_name, target_audience, brand_voice, competitors, additional_context) VALUES (?, ?, ?, ?, ?, ?)',
         ['default', inMemoryStore.brandContext.brandName, inMemoryStore.brandContext.targetAudience, inMemoryStore.brandContext.brandVoice, '', '']
       );
+    }
+
+    // Insert default pillars if not exists
+    const [pillarRows]: any = await p.query('SELECT COUNT(*) as cnt FROM content_pillars');
+    if (pillarRows[0]?.cnt === 0) {
+      for (const pil of inMemoryStore.pillars) {
+        await p.query(
+          'INSERT IGNORE INTO content_pillars (id, name, color) VALUES (?, ?, ?)',
+          [pil.id, pil.name, pil.color]
+        );
+      }
+    }
+
+    // Insert default campaigns if not exists
+    const [campRows]: any = await p.query('SELECT COUNT(*) as cnt FROM campaigns');
+    if (campRows[0]?.cnt === 0) {
+      for (const cmp of inMemoryStore.campaigns) {
+        await p.query(
+          'INSERT IGNORE INTO campaigns (id, name, start_date, end_date, status, goal, color) VALUES (?, ?, ?, ?, ?, ?, ?)',
+          [cmp.id, cmp.name, cmp.startDate, cmp.endDate, cmp.status, cmp.goal, cmp.color]
+        );
+      }
     }
 
     console.log('[DB] Database schema initialized and tables verified.');
@@ -251,10 +287,12 @@ export async function fetchAllInitialData() {
       publishAt: c.publish_at,
       caption: c.caption,
       script: c.script,
-      views: c.views,
-      likes: c.likes,
-      shares: c.shares,
-      commentsCount: c.comments_count,
+      thumbnail: c.thumbnail,
+      views: c.views || 0,
+      likes: c.likes || 0,
+      shares: c.shares || 0,
+      commentsCount: c.comments_count || 0,
+      engagement: c.engagement || 0,
       createdAt: c.created_at,
       updatedAt: c.updated_at
     }));
@@ -264,6 +302,7 @@ export async function fetchAllInitialData() {
       title: i.title,
       description: i.description,
       platform: i.platform,
+      pillarId: i.pillar_id,
       score: i.score,
       createdBy: i.created_by,
       createdAt: i.created_at
@@ -280,6 +319,7 @@ export async function fetchAllInitialData() {
 
     const formattedAssets: Asset[] = assets.map((a: any) => ({
       id: a.id,
+      contentId: a.content_id,
       name: a.name,
       url: a.url,
       type: a.type,
@@ -287,12 +327,28 @@ export async function fetchAllInitialData() {
       uploadedAt: a.uploaded_at
     }));
 
+    const formattedPillars: ContentPillar[] = pillars.map((pl: any) => ({
+      id: pl.id,
+      name: pl.name,
+      color: pl.color
+    }));
+
+    const formattedCampaigns: Campaign[] = campaigns.map((cmp: any) => ({
+      id: cmp.id,
+      name: cmp.name,
+      startDate: cmp.start_date,
+      endDate: cmp.end_date,
+      status: cmp.status,
+      goal: cmp.goal,
+      color: cmp.color
+    }));
+
     return {
       user: users[0] || inMemoryStore.user,
       users: users.length ? users : inMemoryStore.users,
       brandContext,
-      pillars: pillars.length ? pillars : inMemoryStore.pillars,
-      campaigns: campaigns.length ? campaigns : inMemoryStore.campaigns,
+      pillars: formattedPillars.length ? formattedPillars : inMemoryStore.pillars,
+      campaigns: formattedCampaigns.length ? formattedCampaigns : inMemoryStore.campaigns,
       contents: formattedContents,
       ideas: formattedIdeas,
       comments: formattedComments,
@@ -318,8 +374,8 @@ export async function dbSaveContent(item: ContentItem) {
       INSERT INTO contents (
         id, title, description, platform, content_type, status, priority,
         owner_id, pillar_id, campaign_id, publish_at, caption, script,
-        views, likes, shares, comments_count, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        thumbnail, views, likes, shares, comments_count, engagement, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON DUPLICATE KEY UPDATE
         title = VALUES(title),
         description = VALUES(description),
@@ -333,10 +389,12 @@ export async function dbSaveContent(item: ContentItem) {
         publish_at = VALUES(publish_at),
         caption = VALUES(caption),
         script = VALUES(script),
+        thumbnail = VALUES(thumbnail),
         views = VALUES(views),
         likes = VALUES(likes),
         shares = VALUES(shares),
         comments_count = VALUES(comments_count),
+        engagement = VALUES(engagement),
         updated_at = VALUES(updated_at)
     `, [
       item.id,
@@ -352,10 +410,12 @@ export async function dbSaveContent(item: ContentItem) {
       item.publishAt || null,
       item.caption || '',
       item.script || '',
+      item.thumbnail || null,
       item.views || 0,
       item.likes || 0,
       item.shares || 0,
       item.commentsCount || 0,
+      item.engagement || 0,
       item.createdAt || new Date().toISOString(),
       item.updatedAt || new Date().toISOString()
     ]);
@@ -386,24 +446,28 @@ export async function dbDeleteContent(id: string) {
 export async function dbSaveIdea(idea: Idea) {
   const p = await getDbPool();
   if (!p) {
-    inMemoryStore.ideas.unshift(idea);
+    const idx = inMemoryStore.ideas.findIndex(i => i.id === idea.id);
+    if (idx >= 0) inMemoryStore.ideas[idx] = idea;
+    else inMemoryStore.ideas.unshift(idea);
     return idea;
   }
 
   try {
     await p.query(`
-      INSERT INTO ideas (id, title, description, platform, score, created_by, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO ideas (id, title, description, platform, pillar_id, score, created_by, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       ON DUPLICATE KEY UPDATE
         title = VALUES(title),
         description = VALUES(description),
         platform = VALUES(platform),
+        pillar_id = VALUES(pillar_id),
         score = VALUES(score)
     `, [
       idea.id,
       idea.title || '',
       idea.description || '',
       idea.platform || 'Instagram',
+      idea.pillarId || null,
       idea.score || 75,
       idea.createdBy || '',
       idea.createdAt || new Date().toISOString()
@@ -502,15 +566,17 @@ export async function dbSaveAsset(asset: Asset) {
 
   try {
     await p.query(`
-      INSERT INTO assets (id, name, url, type, size, uploaded_at)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO assets (id, content_id, name, url, type, size, uploaded_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
       ON DUPLICATE KEY UPDATE
+        content_id = VALUES(content_id),
         name = VALUES(name),
         url = VALUES(url),
         type = VALUES(type),
         size = VALUES(size)
     `, [
       asset.id,
+      asset.contentId || null,
       asset.name,
       asset.url,
       asset.type,
@@ -600,5 +666,89 @@ export async function dbUpdateUser(updates: Partial<User>) {
   } catch (err: any) {
     console.error('[DB] Update user error:', err.message);
     return updates;
+  }
+}
+
+export async function dbSavePillar(pillar: ContentPillar) {
+  const p = await getDbPool();
+  if (!p) {
+    const idx = inMemoryStore.pillars.findIndex(pl => pl.id === pillar.id);
+    if (idx >= 0) inMemoryStore.pillars[idx] = pillar;
+    else inMemoryStore.pillars.push(pillar);
+    return pillar;
+  }
+
+  try {
+    await p.query(`
+      INSERT INTO content_pillars (id, name, color)
+      VALUES (?, ?, ?)
+      ON DUPLICATE KEY UPDATE
+        name = VALUES(name),
+        color = VALUES(color)
+    `, [pillar.id, pillar.name, pillar.color]);
+    return pillar;
+  } catch (err: any) {
+    console.error('[DB] Save pillar error:', err.message);
+    return pillar;
+  }
+}
+
+export async function dbDeletePillar(id: string) {
+  const p = await getDbPool();
+  if (!p) {
+    inMemoryStore.pillars = inMemoryStore.pillars.filter(pl => pl.id !== id);
+    return true;
+  }
+
+  try {
+    await p.query('DELETE FROM content_pillars WHERE id = ?', [id]);
+    return true;
+  } catch (err: any) {
+    console.error('[DB] Delete pillar error:', err.message);
+    return false;
+  }
+}
+
+export async function dbSaveCampaign(campaign: Campaign) {
+  const p = await getDbPool();
+  if (!p) {
+    const idx = inMemoryStore.campaigns.findIndex(c => c.id === campaign.id);
+    if (idx >= 0) inMemoryStore.campaigns[idx] = campaign;
+    else inMemoryStore.campaigns.push(campaign);
+    return campaign;
+  }
+
+  try {
+    await p.query(`
+      INSERT INTO campaigns (id, name, start_date, end_date, status, goal, color)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON DUPLICATE KEY UPDATE
+        name = VALUES(name),
+        start_date = VALUES(start_date),
+        end_date = VALUES(end_date),
+        status = VALUES(status),
+        goal = VALUES(goal),
+        color = VALUES(color)
+    `, [campaign.id, campaign.name, campaign.startDate, campaign.endDate, campaign.status, campaign.goal, campaign.color]);
+    return campaign;
+  } catch (err: any) {
+    console.error('[DB] Save campaign error:', err.message);
+    return campaign;
+  }
+}
+
+export async function dbDeleteCampaign(id: string) {
+  const p = await getDbPool();
+  if (!p) {
+    inMemoryStore.campaigns = inMemoryStore.campaigns.filter(c => c.id !== id);
+    return true;
+  }
+
+  try {
+    await p.query('DELETE FROM campaigns WHERE id = ?', [id]);
+    return true;
+  } catch (err: any) {
+    console.error('[DB] Delete campaign error:', err.message);
+    return false;
   }
 }

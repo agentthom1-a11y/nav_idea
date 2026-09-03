@@ -16,7 +16,7 @@ describe('AI Service', () => {
     const result = await aiService.generateContent('Instagram', 'Growth Tips', '5 tips');
     expect(global.fetch).toHaveBeenCalledWith('/api/generate-content', expect.objectContaining({
       method: 'POST',
-      body: JSON.stringify({ platform: 'Instagram', pillar: 'Growth Tips', topic: '5 tips' }),
+      body: JSON.stringify({ platform: 'Instagram', pillar: 'Growth Tips', topic: '5 tips', type: 'caption', contentType: 'Post' }),
     }));
     expect(result).toBe('Generated social post content #success');
   });

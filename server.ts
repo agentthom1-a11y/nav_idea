@@ -18,31 +18,62 @@ import {
   dbSaveAsset, 
   dbDeleteAsset, 
   dbSaveBrandContext, 
-  dbUpdateUser 
+  dbUpdateUser,
+  dbSavePillar,
+  dbDeletePillar,
+  dbSaveCampaign,
+  dbDeleteCampaign
 } from "./src/db";
 
 dotenv.config();
 
 const DEFAULT_BASE_URL = "https://api.justwoker.icu/v1";
 const DEFAULT_API_KEY = "sk-vJ44UylFkTsFwWCN4sHh2TJUjHFEfNPxz248yvMe47dD6hJD";
-const DEFAULT_MODEL = "claude-opus-4-8";
+const DEFAULT_MODEL = "claude-opus-5";
 
 const AI_BASE_URL = process.env.AI_BASE_URL || DEFAULT_BASE_URL;
 const AI_API_KEY = process.env.AI_API_KEY || process.env.GEMINI_API_KEY || DEFAULT_API_KEY;
 const AI_MODEL = process.env.AI_MODEL || DEFAULT_MODEL;
 
-function cleanJsonString(raw: string): string {
+export function cleanJsonString(raw: string): string {
   if (!raw) return "";
   let clean = raw.trim();
-  if (clean.startsWith("```json")) {
-    clean = clean.substring(7);
-  } else if (clean.startsWith("```")) {
-    clean = clean.substring(3);
+  
+  // Strip markdown code fences if present
+  const fenceMatch = clean.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+  if (fenceMatch) {
+    clean = fenceMatch[1].trim();
   }
-  if (clean.endsWith("```")) {
-    clean = clean.substring(0, clean.length - 3);
+  
+  // Try direct parse
+  try {
+    JSON.parse(clean);
+    return clean;
+  } catch (e) {
+    // Attempt to locate outermost JSON object
+    const startObj = clean.indexOf('{');
+    const endObj = clean.lastIndexOf('}');
+    if (startObj !== -1 && endObj > startObj) {
+      const candidate = clean.substring(startObj, endObj + 1);
+      try {
+        JSON.parse(candidate);
+        return candidate;
+      } catch (err) {}
+    }
+
+    // Attempt to locate outermost JSON array
+    const startArr = clean.indexOf('[');
+    const endArr = clean.lastIndexOf(']');
+    if (startArr !== -1 && endArr > startArr) {
+      const candidate = clean.substring(startArr, endArr + 1);
+      try {
+        JSON.parse(candidate);
+        return candidate;
+      } catch (err) {}
+    }
   }
-  return clean.trim();
+
+  return clean;
 }
 
 export async function callAI(prompt: string, systemPrompt?: string): Promise<string> {
@@ -53,27 +84,45 @@ export async function callAI(prompt: string, systemPrompt?: string): Promise<str
   }
   messages.push({ role: "user", content: prompt });
 
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${AI_API_KEY}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: AI_MODEL,
-      messages,
-      temperature: 0.7,
-    }),
-  });
+  const modelsToTry = [AI_MODEL, "claude-opus-5", "claude-opus-5-thinking"].filter(
+    (m, idx, self) => self.indexOf(m) === idx
+  );
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`AI API error (${response.status}): ${errorText}`);
+  let lastError: any = null;
+
+  for (const model of modelsToTry) {
+    try {
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${AI_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model,
+          messages,
+          temperature: 0.7,
+          max_tokens: 1500,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`AI API error (${response.status}) on model ${model}: ${errorText}`);
+      }
+
+      const data = await response.json();
+      const text = data.choices?.[0]?.message?.content || "";
+      if (text) {
+        return text.trim();
+      }
+    } catch (err: any) {
+      lastError = err;
+      console.warn(`[AI] Attempt with model ${model} failed: ${err.message}. Trying next candidate...`);
+    }
   }
 
-  const data = await response.json();
-  const text = data.choices?.[0]?.message?.content || "";
-  return text.trim();
+  throw lastError || new Error("All AI models failed to return a response.");
 }
 
 async function startServer() {
@@ -184,29 +233,62 @@ async function startServer() {
     return ctx;
   };
 
+  // ----------------- AI ENDPOINTS -----------------
+
   app.post("/api/generate-content", async (req, res) => {
-    const { platform = "Instagram", pillar, topic, brandContext } = req.body || {};
+    const { platform = "Instagram", pillar, topic, brandContext, type = "caption", contentType = "Post" } = req.body || {};
     const topicName = topic || pillar || 'growth strategy';
 
     try {
-      const prompt = `You are an expert social media manager and content creator. Generate a high-performing post for ${platform}.
-Topic/Pillar: ${topicName}
-Requirements:
-- Structure with a high-retention hook, value-packed body, and clear CTA.
-- Tailor language, format, and style specifically for ${platform}.
-- Include relevant hashtags and emojis.
-- Output ONLY the ready-to-publish post text without preamble or conversational filler.` + buildContextString(brandContext);
+      let prompt = '';
+      let systemPrompt = 'You are a world-class social media strategist and copywriting expert.';
 
-      const result = await callAI(prompt, "You are a world-class social media strategist and copywriting expert.");
+      if (type === 'script') {
+        prompt = `You are a professional social media scriptwriter. Generate a complete, ready-to-produce script or slide breakdown for:
+Topic: "${topicName}"
+Platform: ${platform}
+Format: ${contentType}
+
+Requirements:
+- If format is Carousel or Story: produce clear slide-by-slide breakdowns (Slide 1 Hook, Slide 2 Insight, Slide 3 Deep Dive, Slide 4 Value, Slide 5 Action Step, Slide 6 CTA).
+- If format is Reel, Shorts, or Video: produce timestamped director notes & verbal script ([00:00 - Hook], [00:15 - Core Value], [00:45 - Solution], [01:00 - CTA]).
+- If format is Article or Post: produce structured section headings and body copy.
+- Make it 100% specific to the topic without fluff.
+- Output ONLY the finished script text without introductory or conversational pleasantries.` + buildContextString(brandContext);
+      } else {
+        prompt = `You are an expert social media manager and conversion copywriter. Generate a high-performing post caption for:
+Topic: "${topicName}"
+Platform: ${platform}
+Format: ${contentType}
+
+Requirements:
+- Structure with a scroll-stopping hook in the first line.
+- Provide high-value, skimmable body points packed with insights specific to "${topicName}".
+- Include a compelling Call-to-Action (CTA).
+- Include 8-15 highly relevant, niche-specific hashtags and appropriate emojis.
+- Tailor tone and formatting specifically for ${platform}.
+- Output ONLY the ready-to-publish caption text without preamble or conversational wrapper.` + buildContextString(brandContext);
+      }
+
+      const result = await callAI(prompt, systemPrompt);
       if (result) {
         return res.json({ content: result });
       }
     } catch (error: any) {
-      console.warn("AI Generation fallback triggered:", error.message);
+      console.warn("[AI] Content generation fallback triggered:", error.message);
     }
 
-    // High quality fallback if AI service is temporarily unreachable
-    const fallbackContent = `🚀 Mastering ${topicName} on ${platform}:\n\n1. Hook your audience in the first 3 seconds.\n2. Deliver 1 key actionable takeaway without fluff.\n3. Give them a reason to save and share.\n\nWhat is your #1 goal with ${topicName} this week? Drop your thoughts below! 👇\n\n#${platform.toLowerCase()} #contentstrategy #growth #creator`;
+    // Dynamic contextual fallback if AI service is temporarily unreachable
+    const sanitizedTopic = topicName.replace(/[^\w\s-]/g, '').trim();
+    const cleanTags = sanitizedTopic.split(/\s+/).filter((w: string) => w.length > 3).map((w: string) => `#${w.toLowerCase()}`).join(' ');
+
+    let fallbackContent = '';
+    if (type === 'script') {
+      fallbackContent = `🎬 [00:00 - Hook] Here is everything you need to know about ${topicName}.\n\n[00:15 - The Core Problem] Most people struggle with this because of outdated workflows and unnecessary friction.\n\n[00:35 - Step 1] Simplify the experience — focus on what delivers direct value.\n[00:50 - Step 2] Implement instant feedback loops and clear status visibility.\n[01:10 - Step 3] Automate routine tasks so users save hours each week.\n\n[01:25 - Call to Action] Tap the link in our bio to get started, or share this with someone who needs it today! 🚀`;
+    } else {
+      fallbackContent = `✨ The game changer for ${topicName} on ${platform}:\n\n1️⃣ Direct accessibility without the traditional waiting friction.\n2️⃣ Verified expert guidance right when you need it.\n3️⃣ Seamless digital flow from start to finish.\n\n💡 Have you experienced the difference yet? Drop your thoughts below!\n\n👇 Save this post for your reference.\n\n#${platform.toLowerCase()} ${cleanTags} #innovation #growth #strategy`;
+    }
+
     res.json({ content: fallbackContent });
   });
 
@@ -217,40 +299,40 @@ Requirements:
       const prompt = `You are a social media director. Create a 7-day content schedule starting from ${startDate} for: ${platforms.join(', ')}.
 Topics/Pillars: ${topics.join(', ')}.
 
-Respond ONLY with a valid JSON array of objects representing 7 daily content items. No markdown wrappers or conversational text.
+Respond ONLY with a valid JSON array of objects representing 7 daily content items. No markdown code fences or conversational text.
 Schema:
 [
   {
-    "title": "Catchy title",
+    "title": "High CTR catchy title specifically about the topic",
     "platform": "Platform name",
     "contentType": "Post | Reel | Video | Carousel | Article | Story",
     "publishAt": "ISO date string",
-    "caption": "Full post caption with hashtags"
+    "caption": "Full post caption with emojis and relevant hashtags"
   }
 ]` + buildContextString(brandContext);
 
-      const result = await callAI(prompt, "You are a JSON-only content planning assistant.");
+      const result = await callAI(prompt, "You are a JSON-only API. You output ONLY valid JSON arrays with no markdown or text wrapper.");
       const cleaned = cleanJsonString(result);
       const plan = JSON.parse(cleaned);
       if (Array.isArray(plan) && plan.length > 0) {
         return res.json({ plan });
       }
     } catch (error: any) {
-      console.warn("Weekly plan fallback triggered:", error.message);
+      console.warn("[AI] Weekly plan fallback triggered:", error.message);
     }
 
-    // Fallback 7-day plan
+    // Dynamic fallback 7-day plan
     const fallbackPlan = Array.from({ length: 7 }).map((_, i) => {
       const d = new Date(startDate);
       d.setDate(d.getDate() + i);
       const plat = platforms[i % platforms.length] || 'LinkedIn';
       const top = topics[i % topics.length] || 'Productivity';
       return {
-        title: `Day ${i + 1}: The Complete Framework for ${top}`,
+        title: `Day ${i + 1}: Key Framework for ${top}`,
         platform: plat,
         contentType: i % 2 === 0 ? 'Post' : 'Carousel',
         publishAt: d.toISOString(),
-        caption: `🔥 Day ${i + 1} Masterclass on ${top}: Step-by-step breakdown to accelerate results.\n\nSave this for your next implementation session! 📌\n\n#${plat.toLowerCase()} #growth #${top.replace(/\s+/g, '').toLowerCase()}`
+        caption: `🔥 Day ${i + 1} Deep Dive on ${top}:\n\nDiscover the actionable strategies top performers use to master ${top}.\n\n📌 Save this to review later!\n\n#${plat.toLowerCase()} #${top.replace(/\s+/g, '').toLowerCase()} #growth #tips`
       };
     });
 
@@ -267,7 +349,7 @@ Core Topics: ${topics.join(", ")}.
 Respond ONLY with a valid JSON array of objects with schema:
 [
   {
-    "title": "Short catchy title",
+    "title": "Short catchy title relevant to the topic",
     "platform": "Exact platform name",
     "contentType": "Post | Reel | Video | Carousel | Article | Shorts | Story",
     "publishAt": "ISO date string",
@@ -275,24 +357,24 @@ Respond ONLY with a valid JSON array of objects with schema:
   }
 ]` + buildContextString(brandContext);
 
-      const result = await callAI(prompt, "You are a JSON-only daily content suggestion generator.");
+      const result = await callAI(prompt, "You are a JSON-only API. Respond strictly with a valid JSON array.");
       const cleaned = cleanJsonString(result);
       const suggestions = JSON.parse(cleaned);
       if (Array.isArray(suggestions) && suggestions.length > 0) {
         return res.json({ suggestions });
       }
     } catch (error: any) {
-      console.warn("Daily suggestions fallback triggered:", error.message);
+      console.warn("[AI] Daily suggestions fallback triggered:", error.message);
     }
 
     const fallbackSuggestions = platforms.map((plat, idx) => {
       const top = topics[idx % topics.length] || 'Industry Insights';
       return {
-        title: `The 2026 Playbook for ${top} on ${plat}`,
+        title: `Insights: ${top} on ${plat}`,
         platform: plat,
         contentType: plat === 'Instagram' || plat === 'TikTok' ? 'Reel' : 'Post',
         publishAt: new Date(date).toISOString(),
-        caption: `💡 How top creators approach ${top} in 2026:\n\n1. Prioritize authentic storytelling.\n2. Keep formatting clean and skimmable.\n3. Ask questions that provoke thoughtful discussion.\n\nDouble tap if you found this helpful! ❤️\n\n#${plat.toLowerCase()} #contentstrategy #creator`
+        caption: `💡 How to approach ${top} effectively:\n\n1. Prioritize authentic value and clear communication.\n2. Keep your workflow focused and skimmable.\n3. Measure real engagement.\n\nDouble tap if this resonates! ❤️\n\n#${plat.toLowerCase()} #${top.replace(/\s+/g, '').toLowerCase()} #creators`
       };
     });
 
@@ -309,27 +391,30 @@ Content Type: ${contentType}
 
 Respond ONLY with a valid JSON object matching this exact schema:
 {
-  "title": "High CTR title",
-  "description": "Creative brief with target audience, core goal, and angle",
-  "script": "Complete outline or script text",
-  "caption": "Full social caption with emojis and hashtags"
+  "title": "High CTR title specifically relevant to ${topic}",
+  "description": "Creative brief with target audience, core goal, and unique angle",
+  "script": "Complete outline, slide breakdown, or script text formatted for ${contentType}",
+  "caption": "Full social caption with emojis, hook, and relevant hashtags"
 }` + buildContextString(brandContext);
 
-      const result = await callAI(prompt, "You are a JSON-only social content producer.");
+      const result = await callAI(prompt, "You are a JSON-only social content producer. You must return ONLY valid JSON without markdown code blocks or text.");
       const cleaned = cleanJsonString(result);
       const details = JSON.parse(cleaned);
       if (details && details.title) {
         return res.json({ details });
       }
     } catch (error: any) {
-      console.warn("Generate all details fallback triggered:", error.message);
+      console.warn("[AI] Generate all details fallback triggered:", error.message);
     }
 
+    const sanitizedTopic = topic.replace(/[^\w\s-]/g, '').trim();
+    const cleanTags = sanitizedTopic.split(/\s+/).filter((w: string) => w.length > 3).map((w: string) => `#${w.toLowerCase()}`).join(' ');
+
     const fallbackDetails = {
-      title: `The Ultimate Playbook for ${topic}`,
-      description: `A high-impact breakdown targeting modern creators and growth leaders. Covers key strategies to implement ${topic} efficiently.`,
-      script: `[00:00 - Hook] Here is the #1 thing you need to know about ${topic}.\n[00:15 - Insight] Most people focus on the wrong metrics and burn out.\n[00:40 - Action Steps]\n1. Build an automated capture system.\n2. Focus on consistency over perfection.\n3. Iterate based on real engagement data.\n[01:00 - CTA] Follow for more actionable systems and templates!`,
-      caption: `If you want to master ${topic} without spending 20 hours a week, save this post immediately! 🚀\n\nDrop a comment with 'GROWTH' and I'll send over the complete framework for free! 📥\n\n#${platform.toLowerCase()} #contentstrategy #productivity #marketingtips`
+      title: `The Comprehensive Guide to ${topic}`,
+      description: `A targeted breakdown for modern audiences and teams. Covers key strategies, best practices, and actionable execution for ${topic}.`,
+      script: `[Slide 1 / Hook] What you need to know about ${topic}\n[Slide 2] The common hurdles and why old methods fall short.\n[Slide 3] The 3-part blueprint to get results.\n[Slide 4] Real-world implementation checklist.\n[Slide 5] Save & share this guide!`,
+      caption: `💡 Everything you need to know about ${topic}:\n\nHere is the step-by-step breakdown you can implement right away.\n\n👉 Swipe through to see the entire guide!\n\nSave this post so you have it ready when you need it. 📌\n\n#${platform.toLowerCase()} ${cleanTags} #tips #strategy`
     };
 
     res.json({ details: fallbackDetails });
@@ -355,14 +440,14 @@ Respond ONLY with a valid JSON object with schema:
   "suggestions": ["Actionable suggestion 1", "Actionable suggestion 2", "Actionable suggestion 3"]
 }` + buildContextString(brandContext);
 
-        const result = await callAI(prompt, "You are a JSON-only SEO and readability analyst.");
+        const result = await callAI(prompt, "You are a JSON-only SEO and readability analyst. Return ONLY valid JSON.");
         const cleaned = cleanJsonString(result);
         const analysis = JSON.parse(cleaned);
         if (analysis && typeof analysis.score === 'number') {
           return res.json(analysis);
         }
       } catch (error: any) {
-        console.warn("SEO audit fallback triggered:", error.message);
+        console.warn("[AI] SEO audit fallback triggered:", error.message);
       }
     }
 
@@ -502,6 +587,42 @@ Respond ONLY with a valid JSON object with schema:
     try {
       const updated = await dbUpdateUser(req.body);
       res.json(updated);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/pillars", async (req, res) => {
+    try {
+      const saved = await dbSavePillar(req.body);
+      res.json(saved);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.delete("/api/pillars/:id", async (req, res) => {
+    try {
+      const success = await dbDeletePillar(req.params.id);
+      res.json({ success });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/campaigns", async (req, res) => {
+    try {
+      const saved = await dbSaveCampaign(req.body);
+      res.json(saved);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.delete("/api/campaigns/:id", async (req, res) => {
+    try {
+      const success = await dbDeleteCampaign(req.params.id);
+      res.json({ success });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
