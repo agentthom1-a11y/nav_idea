@@ -3,6 +3,7 @@ import path from "path";
 import fs from "fs";
 import { createServer as createViteServer } from "vite";
 import http from "http";
+import net from "net";
 import { Server as SocketIOServer } from "socket.io";
 import dotenv from "dotenv";
 import { 
@@ -649,15 +650,29 @@ Respond ONLY with a valid JSON object with schema:
     });
   }
 
-  if (isNaN(Number(PORT))) {
-    httpServer.listen(PORT, () => {
-      console.log(`Server running on socket ${PORT}`);
-    });
-  } else {
-    httpServer.listen(Number(PORT), "0.0.0.0", () => {
-      console.log(`Server running on http://localhost:${PORT}`);
+  function findAvailablePort(startPort: number): Promise<number> {
+    return new Promise((resolve) => {
+      const tester = net.createServer()
+        .once('error', () => {
+          resolve(findAvailablePort(startPort + 1));
+        })
+        .once('listening', () => {
+          tester.once('close', () => resolve(startPort)).close();
+        })
+        .listen(startPort, '0.0.0.0');
     });
   }
+
+  const preferredPort = Number(PORT) || 3000;
+  const availablePort = await findAvailablePort(preferredPort);
+
+  if (availablePort !== preferredPort) {
+    console.log(`Port ${preferredPort} is already in use. Automatically switched to port ${availablePort}`);
+  }
+
+  httpServer.listen(availablePort, "0.0.0.0", () => {
+    console.log(`Server running on http://localhost:${availablePort}`);
+  });
 }
 
 startServer();
